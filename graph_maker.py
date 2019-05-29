@@ -113,7 +113,6 @@ def make_apache_log_graph(name, title, files, colors, bit_rates, legend_x, legen
             time_digits = segment_time.split(':')
             elapsed_seg_time = get_elapsed_seg_time(init_time_digits, time_digits)
             if zoom > -1 and elapsed_seg_time >= zoom:
-                print("ZOOOOOMING BONERS")
                 break
             stream = re.findall(r'\d+', filename)[0]
             which_stream = get_stream(int(stream[0]))
@@ -250,7 +249,6 @@ def make_apache_graphs():
 
 def make_segment_graph(dir_name, zoom): 
     """ """ 
-    print("SCRAMBLING BONERS", dir_name, zoom)
     requested_video_files = get_requested_video_files(dir_name)
     if not requested_video_files:
         return 1
@@ -258,7 +256,6 @@ def make_segment_graph(dir_name, zoom):
     x = []
     y = []
     #prev_color = None
-    #cunt = 0
     colors = []
     init_time_digits = requested_video_files[0][1].split(':')
     for req_vid_file in requested_video_files:
@@ -267,23 +264,18 @@ def make_segment_graph(dir_name, zoom):
         time_digits = segment_time.split(':')
         elapsed_seg_time = get_elapsed_seg_time(init_time_digits, time_digits)
         if zoom > 1 and elapsed_seg_time >= zoom:
-            print("ZOOMING BONERS", zoom, elapsed_seg_time)
             break
         stream = re.findall(r'\d+', filename)[0]
         which_stream = get_stream(int(stream[0]))
         if elapsed_seg_time is not None:
             color = get_seg_color(which_stream)
-            #print("COLORING FRUMPS", color, which_stream)
             x.append(elapsed_seg_time)
             y.append(segment_num)
             
             if [color, which_stream] not in colors:
-                print("SNUGGLING BONERS", color, which_stream)
-                #exit()
                 #if not prev_color or prev_color != color:
                 #prev_color = color
                 plt.scatter(elapsed_seg_time, segment_num, color=color, marker='x') 
-                #cunt +=1 
                 colors.append([color, which_stream])
             else:
                 plt.scatter(elapsed_seg_time, segment_num, color=color, marker='x', label='_nolegend_')
@@ -295,21 +287,17 @@ def make_segment_graph(dir_name, zoom):
     legend_y = 0.85
     #legend_names = ['360', '1930', '3850', '7000']
     
-    print("SETTING BONERS", colors)
-    #exit()
     
     i = 0
     legend_names = []
-    frumps = []
+    tmps = []
     for x in colors:
-        frumps.append(x[1])
-    for color in set(frumps):
-        print('POOPY FRUMPS', color)
+        tmps.append(x[1])
+    for color in set(tmps):
         legend_names.append(str(color) + ' kb/s')
         i += 1
     
-    print("LEGENDARY BONERS", legend_names)
-    #exit()
+
     if zoom > -1:
         plt.xlim(-25, zoom)
     else:
@@ -333,7 +321,6 @@ def make_segment_graph(dir_name, zoom):
 
 def make_segment_graphs(zoom=-1):
     """ """ 
-    print("MAKING BONERS")
     #if filename == 'make_all':
     for filename in glob.iglob('log_files/*.txt'):
         print(filename)
