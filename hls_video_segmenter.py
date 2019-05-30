@@ -5,7 +5,7 @@
 #
 #
 #
-
+import queue as Q
 import os
 import glob
 import argparse
@@ -16,16 +16,21 @@ import pprint
 
 
 
-class Stream:
-    def __init__(self, h, w, br, fps):
-        self.height = h
+
+class Stream(object):
+    def __init__(self, w, h, br, fps):
         self.width = w
+        self.height = h
         self.bit_rate = br
         self.fps = fps
     
+    def __lt__(self, other):
+        return self.bit_rate > other.bit_rate
+
+    
     def __str__(self):
         return ('Resolution: ' + str(self.height) + 'x' + str(self.width) +
-                '; bit rate: ' + str(self.bit_rate) + '; fps: ' + str(self.fps))
+                '; bit rate: ' + str(self.bit_rate) + 'k; fps: ' + str(self.fps))
 
 
 def run_ffmpeg(video_file_loc, streams, extra_params=''):
@@ -38,8 +43,7 @@ def run_ffmpeg(video_file_loc, streams, extra_params=''):
     for token in extra_params:
         extra_param_str += token 
     video_file = video_file_loc.split('/')[len(video_file_loc.split('/'))-1]
-    cur_dir_root = video_file_loc.split('/')[0]
-    seg_loc = 'segmented_videos/'       
+    cur_dir_root = video_file_loc.split('/')[0]       
     cmd = 'ffmpeg -i ' + video_file_loc + ' '
     if n_streams > 1:
         tmp_line = '-filter_complex "[v:0]split=' + str(n_streams)
@@ -70,15 +74,19 @@ def run_ffmpeg(video_file_loc, streams, extra_params=''):
         tmp_line += ' -c:v:' + str(stream_index) + ' libx264'
         tmp_line += ' -b:v:' + str(stream_index)
         bit_rate = stream.bit_rate
-        tmp_line += ' ' + bit_rate + 'k' + ' '
+        tmp_line += ' ' + str(bit_rate) + 'k' + ' '
         cmd += tmp_line
         stream_index += 1
     tmp_line = ''    
     for stream in streams:
         tmp_line += '-map a:0 '
+    seg_dir = 'segmented_videos/' + video_file_loc.split('/')[1].split('.')[0]
     tmp_line += ('-c:a aac -b:a 128k -ac 2 ' +
                  '-f hls -hls_time 4 -hls_playlist_type event ' +
                  '-master_pl_name master.m3u8 ' +
+                 # TODO: why doesn't folder structure work?
+                 #'-hls_segment_filename ' + seg_dir + '/stream_%v/data%06d.ts ' + 
+                 #'-use_localtime_mkdir 1 ' + 
                  '-var_stream_map "')
     stream_index = 0
     for stream in streams:
@@ -87,8 +95,11 @@ def run_ffmpeg(video_file_loc, streams, extra_params=''):
             tmp_line += ' '
         stream_index += 1
     tmp_line += '" '
-    tmp_line += seg_loc + video_file.split('.')[0] + '/stream_%v.m3u8'
+    tmp_line += seg_dir + '/stream_%v.m3u8'
     cmd += tmp_line
+    print("~~~COMMAND~~~")
+    print("\"" + cmd + "\"")
+    #exit()
     os.system(cmd)
 
 
@@ -100,11 +111,10 @@ def get_video_stream(video_file_loc):
     args.append(video_file_loc)
     ffprobeOutput = subprocess.check_output(args).decode('utf-8')
     ffprobeOutput = json.loads(ffprobeOutput)
-    height = ffprobeOutput['streams'][0]['height']
     width = ffprobeOutput['streams'][0]['width']
-    bit_rate = str(int(int(ffprobeOutput['streams'][0]['bit_rate']) / 1000))
+    height = ffprobeOutput['streams'][0]['height']
     fps = ffprobeOutput['streams'][0]['r_frame_rate'].split('/')[0]
-    return Stream(height, width, bit_rate, fps)
+    return Stream(width, height, -1, fps)
 
 
 
@@ -119,40 +129,90 @@ def display_video_specs(video_file):
     pp.pprint(ffprobeOutput)
 
 
-def invalid_streams(streams):
+def get_streams(video_file_loc, streams):
     """ """
-    # TODO: finish this
-    return 0
-
+    brs = []
+    ret = Q.PriorityQueue()
+    base_stream = get_video_stream(video_file_loc)
+    fps = base_stream.fps
+    found_base = False
+    for stream in streams:
+        stream = stream.split()
+        if len(stream) != 2:
+            print("Invalid resolution parameters 1 \"" + str(stream) + "\"")
+            return None
+        res = stream[0]
+        if res == 'base':
+            if found_base:
+                print("duplicate base stream", streams)
+                return None
+            found_base = True
+            w = base_stream.width
+            h = base_stream.height
+        else:
+            res = res.split('x')
+            try:
+                w = int(res[0])
+                h = int(res[1])
+            except:
+                print("Invalid resolution parameters 2 \"" + str(res) + "\"")
+                return None
+        try:
+            br = stream[1]
+        except IndexError:
+            print("no bit rate supplied for stream")
+            return None
+        c = br[len(br)-1]
+        if c != 'k':
+            print("Invalid bit rate parameter 1 \"" + str(br) + "\"")
+            return None
+        br = br[:len(br)-1]
+        try:
+            br = int(br)
+        except:
+            print("Invalid bit rate parameter 2 \"" + str(br) + "\"")
+            return None
+        if br in brs:
+            print("duplicate bit rate in streams: ", br)
+            return None
+        brs.append(br)
+        ret.put(Stream(w, h, br, fps))
+    if not found_base:
+        print("no base stream specified")
+        return None
+    return ret
+     
     
 def get_args(args):
     """ """
     # TODO: finish this
     parser = argparse.ArgumentParser()
-    parser.add_argument('-vf', '--video_file', default='', type=str)
+    parser.add_argument('-vf', '--video_file', required=True, type=str)
     parser.add_argument('-ow', '--overwrite', action='store_true')
     parser.add_argument('-vs', '--display_video_specs', action='store_true')
-    parser.add_argument('-streams', default=[], nargs='+') #, type=[])
+    parser.add_argument('-streams', required=True, nargs='+')
     parser.add_argument('-params', '--extra_params', default=[], nargs='+') 
     args = parser.parse_args()
     video_file = args.video_file
     overwrite = args.overwrite
-    # TODO: add functionality to order streams if not in ascending br order
-    # for command line args and input file option
-    streams = args.streams
     extra_params = args.extra_params
-    if video_file == '':
-        print("INVALID 1")
+    video_file_loc = 'videos/' + video_file
+    if not os.path.exists(video_file_loc):
+        print("Video \"" + video_file + "\" does not exists in the videos folder")
         return None
-    vid_loc = 'videos/' + video_file
-    if not os.path.exists(vid_loc):
-        print("Video \"" + video_file + "\" does not exists in the videos folder. aborting")
-        return None
-    if streams is not None:
-        if invalid_streams(streams):
-            print("INVALID 2")
+    if len(args.streams) == 0:
+        args.streams.append(get_video_stream(video_file_loc)) 
+    else:
+        fps = get_video_stream(video_file_loc).fps
+        args.streams = get_streams(video_file_loc, args.streams)
+        if args.streams is None:
+            print("invalid stream parameters")
             return None
-    seg_loc = 'hlsPlayer/segmented_videos/'
+        tmp_streams = args.streams
+        args.streams = []
+        while not tmp_streams.empty():
+            args.streams.append(tmp_streams.get())
+    seg_loc = 'segmented_videos/'
     segmented_video_file_dir = seg_loc + video_file.split('.')[0]
     if overwrite:
         if not os.path.isdir(segmented_video_file_dir):
@@ -167,6 +227,7 @@ def get_args(args):
 def main(args):
     args = get_args(args)
     if args is None:
+        print("Error detected: aborting")
         return 1
     elif args.display_video_specs:
         display_video_specs(args.video_file)
@@ -183,8 +244,7 @@ def main(args):
             os.remove(f)
     else:
         os.system('mkdir ' + segmented_video_file_dir)
-    if len(args.streams) == 0:
-        args.streams.append(get_video_stream(video_file_loc))
+    
     run_ffmpeg(video_file_loc, args.streams, args.extra_params)
     return 0
 
